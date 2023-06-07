@@ -1,0 +1,26 @@
+pipeline:
+  publish-docker-latest:
+    image: plugins/kaniko
+    settings:
+      repo: yogpstop/systemd_user_exporter
+      tags: latest
+      username:
+        from_secret: docker_username
+      password:
+        from_secret: docker_password
+    when:
+      event: push
+      branch: main
+
+  publish-docker-tag:
+    image: plugins/kaniko
+    settings:
+      repo: yogpstop/systemd_user_exporter
+      tags: ${CI_COMMIT_TAG}
+      username:
+        from_secret: docker_username
+      password:
+        from_secret: docker_password
+    when:
+      event: tag
+      tag: v*
