@@ -10,6 +10,7 @@ import (
 	"os"
 	"regexp"
 	"sort"
+	"sync"
 
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/coreos/go-systemd/v22/login1"
@@ -22,6 +23,7 @@ import (
 )
 
 type data struct {
+	lock    sync.Mutex
 	headers map[string]map[string]interface{}
 	values  map[string][]string
 	keys    []string
@@ -37,7 +39,11 @@ func readOnce(d *data, user login1.User, addr string) error {
 		return err
 	}
 	defer exp.Close()
-	_, err = exp.Write([]byte("GET /metrics HTTP/1.1\r\nHost: " + user.Name + "\r\nConnection: close\r\n\r\n"))
+	if user.Name != "" {
+		_, err = exp.Write([]byte("GET /metrics HTTP/1.1\r\nHost: " + user.Name + "\r\nConnection: close\r\n\r\n"))
+	} else {
+		_, err = exp.Write([]byte("GET /metrics HTTP/1.1\r\nHost: system\r\nConnection: close\r\n\r\n"))
+	}
 	if err != nil {
 		return err
 	}
@@ -48,8 +54,13 @@ func readOnce(d *data, user login1.User, addr string) error {
 	defer res.Body.Close()
 	re4 := []byte("user=\"" + user.Name + "\",name=")
 	scanner := bufio.NewScanner(res.Body)
+	d.lock.Lock()
+	defer d.lock.Unlock()
 	for scanner.Scan() {
-		data := bytes.Replace(scanner.Bytes(), re3, re4, -1)
+		data := scanner.Bytes()
+		if user.Name != "" {
+			data = bytes.Replace(data, re3, re4, -1)
+		}
 		if matches := re1.FindSubmatch(data); matches != nil {
 			list, ok := d.headers[string(matches[1])]
 			if !ok {
@@ -90,22 +101,57 @@ func (_ *server) ServeHTTP(wr http.ResponseWriter, req *http.Request) {
 		return
 	}
 	d := data{
-		make(map[string]map[string]interface{}),
-		make(map[string][]string),
-		[]string{},
+		headers: make(map[string]map[string]interface{}),
+		values:  make(map[string][]string),
 	}
+	var wg sync.WaitGroup
+	wg.Add(len(users) + 1)
+	go func() {
+		defer wg.Done()
+		err = readOnce(&d, login1.User{}, "/tmp/systemd_exporter/systemd_exporter.sock")
+		failed := "0"
+		if err != nil {
+			failed = "1"
+		}
+		d.lock.Lock()
+		defer d.lock.Unlock()
+		list, ok := d.values["systemd_system_failed"]
+		if !ok {
+			list = []string{}
+			d.keys = append(d.keys, "systemd_system_failed")
+		}
+		d.values["systemd_system_failed"] = append(list, "systemd_system_failed "+failed)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+	}()
 	for _, user := range users {
-		rp, err := conn.GetUserPropertyContext(context.TODO(), user.Path, "RuntimePath")
-		if err != nil {
-			log.Println(err)
-			continue
-		}
-		err = readOnce(&d, user, rp.Value().(string)+"/systemd_exporter.sock")
-		if err != nil {
-			log.Println(err)
-			continue
-		}
+		go func(user login1.User) {
+			defer wg.Done()
+			rp, err := conn.GetUserPropertyContext(context.TODO(), user.Path, "RuntimePath")
+			if err == nil {
+				err = readOnce(&d, user, rp.Value().(string)+"/systemd_exporter.sock")
+			}
+			failed := "0"
+			if err != nil {
+				failed = "1"
+			}
+			d.lock.Lock()
+			defer d.lock.Unlock()
+			list, ok := d.values["systemd_user_failed"]
+			if !ok {
+				list = []string{}
+				d.keys = append(d.keys, "systemd_user_failed")
+			}
+			d.values["systemd_user_failed"] = append(list, "systemd_user_failed{user=\""+user.Name+"\"} "+failed)
+			if err != nil {
+				log.Println(err)
+				return
+			}
+		}(user)
 	}
+	wg.Wait()
 	sort.Slice(d.keys, func(i, j int) bool { return d.keys[i] < d.keys[j] })
 	wr.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	wr.WriteHeader(200)

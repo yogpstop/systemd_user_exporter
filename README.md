@@ -6,7 +6,7 @@ podman create -l "io.containers.autoupdate=registry" \
   --network=none --name="systemd-exporter" --pid=host --userns=keep-id \
   --user=%U -v "/run/user/$(id -u)/bus:/run/user/$(id -u)/bus" \
   --entrypoint=/bin/sh docker.io/yogpstop/systemd-exporter:main \
-  -c 'export LISTEN_PID=$$;exec /bin/systemd_exporter --web.systemd-socket --systemd.collector.user --systemd.collector.disable-cgroup-metrics'
+  -c 'export LISTEN_PID=$$;exec systemd_exporter --web.systemd-socket --systemd.collector.user --systemd.collector.disable-cgroup-metrics'
 podman generate systemd --files --name --new --restart-policy=always \
   --requires=dbus.service --after=dbus.service systemd-exporter
 
@@ -24,6 +24,29 @@ while read -r uid _ _ ; do
 done < <(loginctl list-users --no-legend)
 ```
 
+# Prepare system-wide systemd_exporter
+
+```shell
+podman create -l "io.containers.autoupdate=registry" \
+  --net=none --pid=host --name=systemd-exporter1 \
+  -v /var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket \
+  --entrypoint=/bin/sh docker.io/yogpstop/systemd-exporter:main \
+  -c 'export LISTEN_PID=$$;exec systemd_exporter --web.systemd-socket --systemd.collector.disable-cgroup-metrics'
+podman generate systemd --files --name --new --restart-policy=always \
+  --requires=dbus.service --after=dbus.service systemd-exporter1
+install -m644 -vZ container-systemd-exporter1.service .config/systemd/user/
+rm -v container-systemd-exporter1.service
+tee .config/systemd/user/container-systemd-exporter1.socket >/dev/null <<E
+[Socket]
+ListenStream=/tmp/systemd_exporter/systemd_exporter.sock
+DirectoryMode=0700
+
+[Install]
+WantedBy=sockets.target
+E
+systemctl --user enable --now container-systemd-exporter1.socket
+```
+
 # Install aggregate exporter (this project)
 ```shell
 sudo podman create -l "io.containers.autoupdate=registry" \
@@ -31,7 +54,7 @@ sudo podman create -l "io.containers.autoupdate=registry" \
   -v /var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket \
   -v /run/user:/run/user --entrypoint=/bin/sh \
   docker.io/yogpstop/systemd-user-exporter \
-  -c 'export LISTEN_PID=$$;exec /bin/systemd_user_exporter --web.systemd-socket'
+  -c 'export LISTEN_PID=$$;exec systemd_user_exporter --web.systemd-socket'
 sudo podman generate systemd --files --name --new --restart-policy=always \
   --requires=dbus.service --after=dbus.service systemd-user-exporter
 
