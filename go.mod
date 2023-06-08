@@ -1,4 +1,4 @@
-module systemd_user_exporter
+module github.com/yogpstop/systemd_user_exporter
 
 go 1.20
 

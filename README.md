@@ -30,7 +30,7 @@ sudo podman create -l "io.containers.autoupdate=registry" \
   --network=none --name="systemd-user-exporter" --pid=host \
   -v /var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket \
   -v /run/user:/run/user --entrypoint=/bin/sh \
-  docker.io/yogpstop/systemd_user_exporter \
+  docker.io/yogpstop/systemd-user-exporter \
   -c 'export LISTEN_PID=$$;exec /bin/systemd_user_exporter --web.systemd-socket'
 sudo podman generate systemd --files --name --new --restart-policy=always \
   --requires=dbus.service --after=dbus.service systemd-user-exporter
