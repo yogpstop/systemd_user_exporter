@@ -3,7 +3,7 @@ WORKDIR /app
 COPY . /app
 RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w"
 
-FROM scratch
+FROM docker.io/busybox:musl
 COPY --from=build /app/systemd_user_exporter /bin/systemd_user_exporter
 EXPOSE 9558
 #VOLUME /var/run/dbus/system_bus_socket /run/user
