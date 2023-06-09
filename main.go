@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -108,7 +109,7 @@ func (_ *server) ServeHTTP(wr http.ResponseWriter, req *http.Request) {
 	wg.Add(len(users) + 1)
 	go func() {
 		defer wg.Done()
-		err = readOnce(&d, login1.User{}, "/tmp/systemd_exporter/systemd_exporter.sock")
+		err := readOnce(&d, login1.User{}, "/var/lib/systemd_exporter/system.sock")
 		failed := "0"
 		if err != nil {
 			failed = "1"
@@ -129,10 +130,7 @@ func (_ *server) ServeHTTP(wr http.ResponseWriter, req *http.Request) {
 	for _, user := range users {
 		go func(user login1.User) {
 			defer wg.Done()
-			rp, err := conn.GetUserPropertyContext(context.TODO(), user.Path, "RuntimePath")
-			if err == nil {
-				err = readOnce(&d, user, rp.Value().(string)+"/systemd_exporter.sock")
-			}
+			err := readOnce(&d, user, fmt.Sprintf("/var/lib/systemd_exporter/%d.sock", user.UID))
 			failed := "0"
 			if err != nil {
 				failed = "1"
@@ -144,7 +142,8 @@ func (_ *server) ServeHTTP(wr http.ResponseWriter, req *http.Request) {
 				list = []string{}
 				d.keys = append(d.keys, "systemd_user_failed")
 			}
-			d.values["systemd_user_failed"] = append(list, "systemd_user_failed{user=\""+user.Name+"\"} "+failed)
+			d.values["systemd_user_failed"] = append(list,
+				fmt.Sprintf("systemd_user_failed{user=\"%s\",uid=\"%d\"} %s", user.Name, user.UID, failed))
 			if err != nil {
 				log.Println(err)
 				return
@@ -159,7 +158,7 @@ func (_ *server) ServeHTTP(wr http.ResponseWriter, req *http.Request) {
 		h, ok := d.headers[k]
 		if ok {
 			for hh := range h {
-				_, err := wr.Write([]byte(hh + "\n"))
+				_, err = wr.Write([]byte(hh + "\n"))
 				if err != nil {
 					log.Println(err)
 					return
@@ -167,7 +166,7 @@ func (_ *server) ServeHTTP(wr http.ResponseWriter, req *http.Request) {
 			}
 		}
 		for _, ll := range d.values[k] {
-			_, err := wr.Write([]byte(ll + "\n"))
+			_, err = wr.Write([]byte(ll + "\n"))
 			if err != nil {
 				log.Println(err)
 				return
