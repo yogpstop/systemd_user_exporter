@@ -128,6 +128,17 @@ func (_ *server) ServeHTTP(wr http.ResponseWriter, req *http.Request) {
 		}
 	}()
 	for _, user := range users {
+		linger, err := conn.GetUserPropertyContext(context.TODO(), user.Path, "Linger")
+		if err != nil {
+			log.Println("Cannot get Linger property of user ", user.Name)
+			wg.Done()
+			continue
+		}
+		if !linger.Value().(bool) {
+			// No lingering, so continue
+			wg.Done()
+			continue
+		}
 		go func(user login1.User) {
 			defer wg.Done()
 			err := readOnce(&d, user, fmt.Sprintf("/var/lib/systemd_exporter/%d.sock", user.UID))

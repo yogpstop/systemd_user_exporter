@@ -32,7 +32,7 @@ done < <(loginctl list-users --no-legend)
 ```shell
 # --systemd.collector.disable-cgroup-metrics is not supported by official build
 podman create -l "io.containers.autoupdate=registry" \
-  --net=none --name=systemd-exporter1 --pid=host \
+  --net=none --name=systemd-exporter1 --pid=host --userns=keep-id --user=$UID \
   -v /var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket \
   --entrypoint=/bin/sh docker.io/yogpstop/systemd-exporter:main \
   -c 'export LISTEN_PID=$$;exec systemd_exporter --web.systemd-socket --systemd.collector.disable-cgroup-metrics'
@@ -49,9 +49,9 @@ systemctl --user enable --now container-systemd-exporter1.socket
 # Install aggregate exporter (this project)
 ```shell
 podman create -l "io.containers.autoupdate=registry" \
-  --net=none --name=systemd-user-exporter --pid=host \
+  --net=none --name=systemd-user-exporter --pid=host --userns=keep-id \
+  --user=$UID -v /var/lib/systemd_exporter:/var/lib/systemd_exporter \
   -v /var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket \
-  -v /var/lib/systemd_exporter:/var/lib/systemd_exporter \
   --entrypoint=/bin/sh docker.io/yogpstop/systemd-user-exporter \
   -c 'export LISTEN_PID=$$;exec systemd_user_exporter --web.systemd-socket'
 podman generate systemd --files --name --new --restart-policy=always \
