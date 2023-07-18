@@ -24,31 +24,3 @@ pipeline:
     when:
       event: tag
       tag: v*
-
-  publish-mycr-latest:
-    image: plugins/kaniko
-    settings:
-      registry: cr.yogpc.com
-      repo: cr.yogpc.com/systemd-user-exporter
-      tags: latest
-      username:
-        from_secret: my_username
-      password:
-        from_secret: my_password
-    when:
-      event: push
-      branch: main
-
-  publish-mycr-tag:
-    image: plugins/kaniko
-    settings:
-      registry: cr.yogpc.com
-      repo: cr.yogpc.com/systemd-user-exporter
-      tags: ${CI_COMMIT_TAG}
-      username:
-        from_secret: my_username
-      password:
-        from_secret: my_password
-    when:
-      event: tag
-      tag: v*
