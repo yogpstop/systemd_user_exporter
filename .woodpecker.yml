@@ -1,4 +1,4 @@
-pipeline:
+steps:
   publish-docker-latest:
     image: plugins/kaniko
     settings:
