@@ -161,6 +161,39 @@ func (_ *server) ServeHTTP(wr http.ResponseWriter, req *http.Request) {
 			}
 		}(user)
 	}
+	lusers, err := os.ReadDir("/var/lib/systemd/linger")
+	if err != nil {
+		log.Println(err)
+	} else {
+		wg.Add(len(lusers))
+		for _, luser := range lusers {
+			go func(luser os.DirEntry) {
+				defer wg.Done()
+				found := false
+				for _, user := range users {
+					if luser.Name() == user.Name {
+						found = true
+						break
+					}
+				}
+				if !found {
+					d.lock.Lock()
+					defer d.lock.Unlock()
+					list, ok := d.values["systemd_user_failed"]
+					if !ok {
+						list = []string{}
+						d.keys = append(d.keys, "systemd_user_failed")
+					}
+					d.values["systemd_user_failed"] = append(list,
+						fmt.Sprintf("systemd_user_failed{user=\"%s\"} 1", luser.Name()))
+					if err != nil {
+						log.Println(err)
+						return
+					}
+				}
+			}(luser)
+		}
+	}
 	wg.Wait()
 	sort.Slice(d.keys, func(i, j int) bool { return d.keys[i] < d.keys[j] })
 	wr.Header().Set("Content-Type", "text/plain; charset=utf-8")
